@@ -1,0 +1,12 @@
+#include "ShaderLib/ShaderCommon.inc"
+
+layout(location = 0) in vec2 screenCoord;
+
+layout_tex(0) uniform sampler2D srcTex;
+
+layout(location = 0) out vec4 fragColor;
+
+void main()
+{
+    fragColor = texture(srcTex, screenCoord) * vec4(1,0,0,1);
+}

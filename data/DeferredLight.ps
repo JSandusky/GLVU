@@ -1,0 +1,180 @@
+#include "ShaderLib/ShaderCommon.inc"
+#include "ShaderLib/PCF.glsl"
+
+
+layout(location = 0) out vec4 fragColor;
+
+layout_tex(0) uniform sampler2D gbufferPosition;
+layout_tex(1) uniform sampler2D gbufferNormals;
+layout_tex(15) uniform sampler2DShadow shadowMap;
+
+layout_buffer(0) uniform LightData {
+    mat4 lightViewMat;
+    vec4 posType;
+    vec4 lightDir;
+    vec4 color;
+    vec4 extraParams;
+    vec4 shadowCoords[2];
+};
+
+layout_buffer(1) uniform ViewData {
+    mat4 viewMat;
+    mat4 viewProjMat;
+    vec4 viewPos;
+    vec4 viewDir;
+    vec4 viewUp;
+    uvec4 viewport;
+    vec4 nearFar;
+};
+
+vec3 GetShadowCoord(vec4 rect)
+{
+    vec4 vpt = viewport;
+    vec2 size = shadowCoords[0].zw;// - shadowCoords[0].xy;
+    vec2 sampCoords = shadowCoords[0].xy + vec2(gl_FragCoord.x / vpt.z, gl_FragCoord.y / vpt.w) * size;
+    return vec3(sampCoords.x, sampCoords.y, 1.0);
+}
+
+float GetParaboloidShadow(vec3 worldPos, float lightDist)
+{    
+	vec3 vtx = worldPos;
+//#if defined(VULKAN)
+    vtx.x *= -1;
+//#endif
+
+	float fLength = length(vtx);
+	vtx /= fLength;
+    lightDist /= lightDir.w; // divide by radius to turn our distance into 0-1 range
+	
+    vec2 shadowDim = shadowCoords[0].zw - shadowCoords[0].xy;
+    
+	if(vtx.z >= 0.0f)
+	{		
+        vec2 vTexFront;
+        vTexFront.x =  (vtx.x /  (1.0f + vtx.z)) * 0.5f + 0.5f; 
+        vTexFront.y =  1.0f - ((vtx.y /  (1.0f + vtx.z))* 0.5f + 0.5f); 	
+	
+        vec2 coords = shadowCoords[1].xy + GetTexCoord(vTexFront) * shadowDim;
+        return texture(shadowMap, vec3(coords, lightDist)).r;
+	}
+	else
+	{
+        // for the back the z has to be inverted		
+        vec2 vTexBack;
+        vTexBack.x =  (vtx.x /  (1.0f - vtx.z)) * 0.5f + 0.5f; 
+        vTexBack.y =  1.0f - ((vtx.y /  (1.0f - vtx.z)) * 0.5f + 0.5f); 
+        
+        vec2 coords = shadowCoords[0].xy + GetTexCoord(vTexBack) * shadowDim;
+        return texture(shadowMap, vec3(coords, lightDist)).r;
+	}
+}
+
+float IntersectPlane(in vec3 planeNormal, in vec3 planeOrigin, in vec3 rayOrigin, in vec3 rayDir) 
+{ 
+    float denom = dot(planeNormal, rayDir); 
+    vec3 offset = planeOrigin - rayOrigin; 
+    return dot(offset, planeNormal) / denom; 
+} 
+
+void ComputeImplicitFrame(in vec3 dir, out vec3 upDir, out vec3 rightDir)
+{
+    rightDir = cross(vec3(0,1,0), dir);
+    upDir = normalize(cross(dir, rightDir));
+    rightDir = normalize(cross(upDir, dir));
+}
+
+float GetSpotShadow(vec3 worldPos, vec3 lightToWorld, float FOV, float lightDist)
+{   
+    vec2 shadowDim = shadowCoords[0].zw - shadowCoords[0].xy;   
+    vec4 proj = vec4(worldPos, 1) * lightViewMat;
+    proj.xyz /= proj.w;
+    
+    //if (proj.x < -1 || proj.x > 1 || proj.y < -1 || proj.y > 1)
+    //    return 0;
+    
+    proj.xy = proj.xy * 0.5 + 0.5;
+   
+    vec2 xy = shadowCoords[0].xy + proj.xy * shadowDim;
+    return PCFShadow(shadowMap, xy, shadowCoords[0].xy, shadowCoords[0].zw, proj.z, lightDir.w);
+    //return texture(shadowMap, xy).r;
+    //return texture(shadowMap, vec3(xy, proj.z));
+}
+
+float GetDirShadow(vec3 worldPos)
+{   
+    vec2 shadowDim = shadowCoords[0].zw - shadowCoords[0].xy;   
+    vec4 proj = vec4(worldPos, 1) * lightViewMat;
+    proj.xyz /= proj.w;
+    
+    //if (proj.x < -1 || proj.x > 1 || proj.y < -1 || proj.y > 1)
+    //    return 0;
+    
+    proj.xy = proj.xy * 0.5 + 0.5;
+   
+    vec2 xy = shadowCoords[0].xy + proj.xy * shadowDim;
+    //return PCFShadow(shadowMap, xy, shadowCoords[0].xy, shadowCoords[0].zw, proj.z, lightDir.w);
+    //return texture(shadowMap, xy).r;
+    return texture(shadowMap, vec3(xy, proj.z));
+}
+
+void main()
+{
+    vec4 outColor = color;
+    
+    vec2 uvCoords = gl_FragCoord.xy / viewport.zw;
+    
+    vec3 worldPos = texture(gbufferPosition, uvCoords).rgb;
+    vec3 worldNormal = texture(gbufferNormals, uvCoords).rgb * 2.0 - 1.0;
+    
+    vec3 worldToLight = posType.xyz - worldPos;
+    vec3 worldToLightNorm = normalize(worldToLight);
+    vec3 halfVector = normalize(worldToLight + viewDir.xyz);
+    
+    float lightDist = length(worldToLight);
+    
+    float atten = 1.0;
+    float rangeAtten = 1.0 - pow(lightDist / lightDir.w, 2.0);
+    
+    if (posType.w == 1.0)
+    {        
+        vec4 local = vec4(worldPos, 1) * lightViewMat;
+        atten *= clamp(dot(-worldNormal, lightDir.xyz), 0.0, 1.0);
+        atten *= rangeAtten;
+        outColor = vec4(5, 0, 0, 5);
+        
+        float lightToSurfaceAngle = max(degrees(acos(dot(-worldToLightNorm, lightDir.xyz))), 0);
+        if(lightToSurfaceAngle > extraParams.x / 2.0)
+            atten = 0.0;
+        // edge falloff
+        atten *= max(1.0f - pow(lightToSurfaceAngle / (extraParams.x/3.141596), 2), 0);
+        
+        if (extraParams.y == 1.0)
+        {            
+            float shadowDist = GetSpotShadow(worldPos, -worldToLight, extraParams.x, lightDist);
+            atten *= shadowDist;
+        }
+    }
+    else if (posType.w == 2.0)
+    {
+        atten = clamp(dot(-lightDir.xyz, worldNormal), 0.0, 1.0);
+        if (extraParams.y == 1.0)
+            atten *= GetDirShadow(worldPos);
+    }
+    else
+    {
+        outColor = vec4(0, 0, 5, 5);
+        atten = clamp(dot(worldToLightNorm, worldNormal), 0.0, 1.0);
+        atten *= rangeAtten;
+        
+        if (extraParams.y == 1.0)
+        {
+            float shadowDist = GetParaboloidShadow(-worldToLight, lightDist);
+            //if (lightDist > shadowDist * lightDir.w + 0.001f)
+            //    atten = 0;
+            atten *= shadowDist;
+        }
+    }
+    //atten *= dot(halfVector, worldNormal);
+    
+    fragColor = outColor * max(atten, 0.0);
+}

@@ -1,0 +1,5 @@
+material Basic
+{
+    effect = "basic.fx";
+    texture 0 = WHITE;
+}

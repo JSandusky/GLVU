@@ -1,0 +1,32 @@
+#include "ShaderLib/ShaderCommon.inc"
+
+
+layout(location = 0) out vec4 fragColor;
+
+layout_tex(0) uniform sampler2D gbufferPosition;
+layout_tex(1) uniform sampler2D gbufferNormals;
+layout_tex(15) uniform sampler2D shadowMap;
+
+layout_buffer(0) uniform LightData {
+    mat4 lightViewMat;
+    vec4 posType;
+    vec4 lightDir;
+    vec4 color;
+    vec4 extraParams;
+    vec4 shadowCoords[2];
+};
+
+layout_buffer(1) uniform ViewData {
+    mat4 viewMat;
+    mat4 viewProjMat;
+    vec4 viewPos;
+    vec4 viewDir;
+    vec4 viewUp;
+    uvec4 viewport;
+    vec4 nearFar;
+};
+
+void main()
+{    
+    fragColor = color;
+}

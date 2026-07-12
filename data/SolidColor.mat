@@ -1,0 +1,5 @@
+material SolidColor
+{
+    effect = "SolidColor.fx";
+    texture 0 = "UrhoDecalAlpha.dds";
+}

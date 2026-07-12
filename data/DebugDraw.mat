@@ -1,0 +1,4 @@
+material DebugDraw
+{
+    effect = "DebugDraw.fx"
+}

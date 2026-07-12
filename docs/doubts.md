@@ -1,0 +1,50 @@
+# Questionable Elements of GLVU
+
+- Where was GLVU and GLVU2?
+  - GLVU#1 used a pure C API with a ton of function-pointers in structs and integer handles
+    - It worked, but it was unwieldly and slow to add new features to
+    - Took too many influences from Horde3D
+  - GLVU#2 moved to C++
+    - Was excessively-typed
+      - `UniformBuffer`
+      - `VertexBuffer`
+      - `IndexBuffer`
+      - `StructuredBuffer`
+      - `ShaderStorageBuffer`
+      - `Texture1D`
+      - `Texture2D`
+      - `Texture3D`
+      - `TextureCube`
+      - `Texture2DArray`
+      - `TextureCubeArray`
+    - Still didn't do enough, API was more do your own thing
+    - Took too much influence from Urho3D
+  - GLVU#3 (current) collapsed the nonsense
+    - Sometimes this is convoluted such as with DX11 buffers.
+- Should there be serialization?
+- STL is in there pretty deep
+  - Transitioning to EASTL shouldn't be an issue, but other changes are impractical
+  - embracing std::shared_ptr in parameters is only half-assed, lots of raw-pointer passing
+- const char* vs std::string passing
+  - Kept flip flopping over and over about it
+- Scratch Buffers are *sticky*
+  - This is a product of being unable to call `vkCmdUpdateBuffer` while a render-pass is currently being recorded, it's impractical to continuously bounce into and out of render-passes.
+- Command-buffer reuse on Vulkan
+  - Fullscreen and lighting passes only really need commands recorded when the render-targets used are changed (like backbuffer resizing)
+- Texture Data-uploads
+  - Uploads are done piece by piece mostly, should add a multiple upload so that safety-checks and Vulkan command-buffers aren't excessively recorded
+    - Requires V-EZ modifications, not a huge deal to do
+- Ranged Buffers
+  - They're not currently being used extensively enough
+- Matrix size and row/column majority
+  - Should consider storing the transposes somewhere?
+    - Do the transpose at copy into batch time?
+      - Means extra data
+  - GL is an asshole, specifying majority in GLSL layout is only available at 450, that's not realistically usable
+    - use piece-wise specifications, have HLSL specify differently
+- No true forward rendering
+  - Not certain about this
+  - Forward+ or Clustered are pretty ideal
+  - Do opaque lighting in deferred, then do transparencies in clustered/tiled
+    - Configurable cluster sizes is pretty useful, ie. use XZ division instead of XY or XYZ if that makes sense
+  - Although there *is* a forward-lighting loop command, it's not a very good idea to use it and is rarely tested (if at all)
